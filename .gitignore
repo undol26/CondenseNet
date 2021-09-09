@@ -1,0 +1,46 @@
+# Execution files
+*.dll
+*.exe
+*.o
+*.so
+*.com
+*.class
+
+# Log files
+*.log
+*.sql
+*.sqlite
+logs/
+
+# Documentation files
+*.xlsx
+*.xls
+*.pdf
+*.docs
+*.ppt
+*.pptx
+
+# Image files
+*.png
+*.jpg
+*.jpge
+
+# Package files
+*.dmg
+*.iso
+*.tar
+*.zip
+*.gz
+
+# OS system files
+.DS_Store*
+Icon?
+.Trashes
+.Thumbs.db
+.ehthumbs.db
+
+# Editor(vscode) setting files
+.vscode/*
+README.md
+results/
+LICENSE
