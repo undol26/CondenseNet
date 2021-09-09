@@ -8,7 +8,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import math
-from layers import Conv, LearnedGroupConv
+from layers import ResNet, Conv, LearnedGroupConv
+
+LTDN = True
+# LTDN = False
 
 __all__ = ['CondenseNet']
 class _DenseLayer(nn.Module):
@@ -67,31 +70,101 @@ class CondenseNet(nn.Module):
             self.init_stride = 2
             self.pool_size = 7
 
-        self.features = nn.Sequential()
-        ### Initial nChannels should be 3
-        self.num_features = 2 * self.growth[0]
-        ### Dense-block 1 (224x224)
-        self.features.add_module('init_conv', nn.Conv2d(3, self.num_features,
-                                                        kernel_size=3,
-                                                        stride=self.init_stride,
-                                                        padding=1,
-                                                        bias=False))
-        for i in range(len(self.stages)):
-            ### Dense-block i
-            self.add_block(i)
-        ### Linear layer
-        self.classifier = nn.Linear(self.num_features, args.num_classes)
+        self.features = nn.Sequential() # total
+        
+        self.upper = nn.Sequential()
+        self.lower = nn.Sequential()
+        
+        if LTDN:
+            ### Initial nChannels should be 3
+            self.num_features = 2 * self.growth[0]
+            # init_layer = nn.Conv2d(3, self.num_features,
+            #                        kernel_size=3, 
+            #                        stride=self.init_stride,
+            #                        padding=1,
+            #                        bias=False)
+            
+            x00 = nn.Conv2d(3, int(self.num_features/2),
+                                   kernel_size=3, 
+                                   stride=self.init_stride,
+                                   padding=1,
+                                   bias=False)
+            self.upper.add_module('init_conv', x00)
+            
+            # print("x00 before")
+            # print(x00.weight[0,1,2,2])
+            # print(x00.weight[3,1,2,2])
+            # print(x00.weight[3,2,1,2])
+            
+            # print("init_layer")
+            # print(init_layer.weight[0,1,2,2])
+            # print(init_layer.weight[3,1,2,2])
+            # print(init_layer.weight[3,2,1,2])
+            
+            # x00.weight.data.copy_(init_layer.weight[0:int(self.num_features/2),:,:,:])
+            
+            # print("x00 after")
+            # print(x00.weight[0,1,2,2])
+            # print(x00.weight[3,1,2,2])
+            # print(x00.weight[3,2,1,2])
+            
+            x10 = nn.Conv2d(3, int(self.num_features/2),
+                        kernel_size=3, 
+                        stride=self.init_stride,
+                        padding=1,
+                        bias=False)
+            
+            self.lower.add_module('init_conv', x10)
+            
+            # x10.weight.data.copy_(init_layer.weight[int(self.num_features/2):self.num_features,:,:,:])
+            
+            # x00을 resnet에 통과시키기
+            resnet = ResNet(3, int(self.num_features/2),
+                           kernel_size=[1,3,1], padding=1)
+            
+            self.upper.add_module('resnet', resnet)
+            
+            for i in range(len(self.stages)):
+                ### Dense-block i
+                self.add_block(i)
+            ### Linear layer
+            self.classifier = nn.Linear(self.num_features, args.num_classes)
 
-        ### initialize
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
-            elif isinstance(m, nn.Linear):
-                m.bias.data.zero_()
+            ### initialize
+            for m in self.modules():
+                if isinstance(m, nn.Conv2d):
+                    n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                    m.weight.data.normal_(0, math.sqrt(2. / n))
+                elif isinstance(m, nn.BatchNorm2d):
+                    m.weight.data.fill_(1)
+                    m.bias.data.zero_()
+                elif isinstance(m, nn.Linear):
+                    m.bias.data.zero_()
+        else:
+            ### Initial nChannels should be 3
+            self.num_features = 2 * self.growth[0]
+            ### Dense-block 1 (224x224)
+            self.features.add_module('init_conv', nn.Conv2d(3, self.num_features,
+                                                            kernel_size=3,
+                                                            stride=self.init_stride,
+                                                            padding=1,
+                                                            bias=False))
+            for i in range(len(self.stages)):
+                ### Dense-block i
+                self.add_block(i)
+            ### Linear layer
+            self.classifier = nn.Linear(self.num_features, args.num_classes)
+
+            ### initialize
+            for m in self.modules():
+                if isinstance(m, nn.Conv2d):
+                    n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                    m.weight.data.normal_(0, math.sqrt(2. / n))
+                elif isinstance(m, nn.BatchNorm2d):
+                    m.weight.data.fill_(1)
+                    m.bias.data.zero_()
+                elif isinstance(m, nn.Linear):
+                    m.bias.data.zero_()
         return
 
     def add_block(self, i):
