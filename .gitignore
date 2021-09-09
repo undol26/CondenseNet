@@ -44,3 +44,5 @@ Icon?
 README.md
 results/
 LICENSE
+__pycache__/*
+models/__pycache__/*
