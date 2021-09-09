@@ -255,3 +255,32 @@ class Conv(nn.Sequential):
                                           stride=stride,
                                           padding=padding, bias=False,
                                           groups=groups))
+        
+class ResNet(nn.Sequential):
+    def __init__(self, in_channels, out_channels, kernel_size, 
+                 stride=1, padding=0):
+        super(ResNet, self).__init__()
+        
+        # 1st
+        self.add_module('conv', nn.Conv2d(in_channels, out_channels,
+                                          kernel_size=kernel_size[0],
+                                          stride=stride,
+                                          padding=padding, bias=False))
+        self.add_module('norm', nn.BatchNorm2d(in_channels))
+        self.add_module('relu', nn.ReLU(inplace=True))
+
+        # 2nd
+        self.add_module('conv', nn.Conv2d(in_channels, out_channels,
+                                          kernel_size=kernel_size[1],
+                                          stride=stride,
+                                          padding=padding, bias=False))
+        self.add_module('norm', nn.BatchNorm2d(in_channels))
+        self.add_module('relu', nn.ReLU(inplace=True))
+        
+        # 3rd
+        self.add_module('conv', nn.Conv2d(in_channels, out_channels,
+                                          kernel_size=kernel_size[2],
+                                          stride=stride,
+                                          padding=padding, bias=False))
+        self.add_module('norm', nn.BatchNorm2d(in_channels))
+        self.add_module('relu', nn.ReLU(inplace=True))
