@@ -7,7 +7,10 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import math
-from layers import ShuffleLayer, Conv, CondenseConv, CondenseLinear
+from layers import ShuffleLayer, ResNet, Conv, CondenseConv, CondenseLinear
+
+LTDN = True
+# LTDN = False
 
 __all__ = ['CondenseNet']
 
@@ -29,13 +32,58 @@ class _DenseLayer(nn.Module):
         x = self.conv_2(x)
         return torch.cat([x_, x], 1)
 
+class _DenseLayerLTDN(nn.Module):
+    def __init__(self, in_channels, growth_rate, args):
+        super(_DenseLayerLTDN, self).__init__()
+        
+        self.group_1x1 = args.group_1x1
+        self.group_3x3 = args.group_3x3
+        # upper case
+        ### 1x1 conv i --> b*k
+        self.conv_1 = CondenseConv(int(in_channels/2), int(args.bottleneck * growth_rate/2),
+                                       kernel_size=1, groups=self.group_1x1)
+        ### 3x3 conv b*k --> k
+        self.conv_2 = Conv(int(args.bottleneck*growth_rate/2), int(growth_rate/2),
+                           kernel_size=3, padding=1, groups=self.group_3x3)
+        
+        # lower case
+        ### 1x1 conv i --> b*k
+        self.conv_3 = CondenseConv(int(in_channels/2), int(args.bottleneck * growth_rate/2),
+                                       kernel_size=1, groups=self.group_1x1)
+        ### 3x3 conv b*k --> k
+        self.conv_4 = Conv(int(args.bottleneck * growth_rate/2), int(growth_rate/2),
+                           kernel_size=3, padding=1, groups=self.group_3x3)
+
+    def forward(self, x):
+        input_channels = int(x.shape[1])
+        half_input_channels = int(input_channels/2)
+        # output_channels = int(x.shape[1])
+        # half_output_channels = int(output_channels/2)
+        
+        upper_input = x[:,0:half_input_channels,:,:] #1, 8, 32, 32
+        upper = self.conv_1(upper_input) # 1, 16, 32, 32
+        upper = self.conv_2(upper) # 1, 4, 32, 32
+        
+        lower_input = x[:,half_input_channels:input_channels,:,:] #1,8,32,32
+        lower = self.conv_3(lower_input) #1, 16, 32, 32
+        lower = self.conv_4(lower) #1, 4, 32, 32
+        
+        return torch.cat([upper_input, lower, lower_input, upper], 1)
 
 class _DenseBlock(nn.Sequential):
     def __init__(self, num_layers, in_channels, growth_rate, args):
         super(_DenseBlock, self).__init__()
-        for i in range(num_layers):
-            layer = _DenseLayer(in_channels + i * growth_rate, growth_rate, args)
-            self.add_module('denselayer_%d' % (i + 1), layer)
+        if LTDN:
+            for i in range(num_layers):
+                layer = _DenseLayerLTDN(in_channels + i * growth_rate, growth_rate, args)
+                # print(f"layer: \n {layer}")
+                self.add_module('denselayer_%d' % (i + 1), layer)
+            
+        else:
+            for i in range(num_layers):
+                layer = _DenseLayer(in_channels + i * growth_rate, growth_rate, args)
+                # print(f"layer: \n {layer}")
+                self.add_module('denselayer_%d' % (i + 1), layer)
 
 
 class _Transition(nn.Module):
@@ -74,9 +122,16 @@ class CondenseNet(nn.Module):
                                                         stride=self.init_stride,
                                                         padding=1,
                                                         bias=False))
+        
+        if LTDN:
+            resnet = ResNet(int(self.num_features/2), int(self.num_features/2),
+                           kernel_size=[1,3,1])
+            self.features.add_module('resnet', resnet)
+            
         for i in range(len(self.stages)):
             ### Dense-block i
             self.add_block(i)
+        
         ### Linear layer
         self.classifier = CondenseLinear(self.num_features, args.num_classes,
                                          0.5)

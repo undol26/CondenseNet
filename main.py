@@ -103,6 +103,7 @@ import torchvision.datasets as datasets
 
 PRINT_SUMMARY = False
 TORCH_SUMMARY = True
+PRINT_MODEL = False
 
 if TORCH_SUMMARY:
     from torchsummary import summary
@@ -120,18 +121,19 @@ def main():
     global args, best_prec1
 
     ### Calculate FLOPs & Param
-    model = getattr(models, args.model)(args)
-    print(model)
-    if args.data in ['cifar10', 'cifar100']:
-        IMAGE_SIZE = 32
-    else:
-        IMAGE_SIZE = 224
-    n_flops, n_params = measure_model(model, IMAGE_SIZE, IMAGE_SIZE)
-    print('FLOPs: %.2fM, Params: %.2fM' % (n_flops / 1e6, n_params / 1e6))
-    args.filename = "%s_%s_%s.txt" % \
-        (args.model, int(n_params), int(n_flops))
-    del(model)
-    print(args)
+    # model = getattr(models, args.model)(args) # 결국 이게 model = condensenet(args) 이거네...
+    # if PRINT_MODEL:
+    #     print(model)
+    # if args.data in ['cifar10', 'cifar100']:
+    #     IMAGE_SIZE = 32
+    # else:
+    #     IMAGE_SIZE = 224
+    # n_flops, n_params = measure_model(model, IMAGE_SIZE, IMAGE_SIZE)
+    # print('FLOPs: %.2fM, Params: %.2fM' % (n_flops / 1e6, n_params / 1e6))
+    # args.filename = "%s_%s_%s.txt" % \
+    #     (args.model, int(n_params), int(n_flops))
+    # del(model)
+    # print(args)
 
     ### Create model
     model = getattr(models, args.model)(args)
