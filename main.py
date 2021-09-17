@@ -104,6 +104,8 @@ import torchvision.datasets as datasets
 PRINT_SUMMARY = False
 TORCH_SUMMARY = True
 PRINT_MODEL = False
+# LTDN = True
+LTDN = False
 
 if TORCH_SUMMARY:
     from torchsummary import summary

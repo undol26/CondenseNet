@@ -9,10 +9,13 @@ from torch.autograd import Variable
 import math
 from layers import ShuffleLayer, ResNet, Conv, CondenseConv, CondenseLinear
 
-LTDN = True
-# LTDN = False
+import sys
+sys.path.append("..")
+from main import LTDN
 
 __all__ = ['CondenseNet']
+
+print(f'LTDN: {LTDN}')
 
 class _DenseLayer(nn.Module):
     def __init__(self, in_channels, growth_rate, args):

@@ -10,8 +10,9 @@ from torch.autograd import Variable
 import math
 from layers import ResNet, Conv, LearnedGroupConv
 
-LTDN = True
-# LTDN = False
+import sys
+sys.path.append("..")
+from main import LTDN
 
 __all__ = ['CondenseNet']
 class _DenseLayer(nn.Module):
