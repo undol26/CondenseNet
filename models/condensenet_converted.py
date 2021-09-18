@@ -15,8 +15,6 @@ from main import LTDN
 
 __all__ = ['CondenseNet']
 
-print(f'LTDN: {LTDN}')
-
 class _DenseLayer(nn.Module):
     def __init__(self, in_channels, growth_rate, args):
         super(_DenseLayer, self).__init__()
