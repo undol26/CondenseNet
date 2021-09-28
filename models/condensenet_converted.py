@@ -9,10 +9,6 @@ from torch.autograd import Variable
 import math
 from layers import ShuffleLayer, ResNet, Conv, CondenseConv, CondenseLinear
 
-import sys
-sys.path.append("..")
-from main import LTDN
-
 __all__ = ['CondenseNet']
 
 class _DenseLayer(nn.Module):
@@ -74,7 +70,7 @@ class _DenseLayerLTDN(nn.Module):
 class _DenseBlock(nn.Sequential):
     def __init__(self, num_layers, in_channels, growth_rate, args):
         super(_DenseBlock, self).__init__()
-        if LTDN:
+        if args.ltdn_model:
             for i in range(num_layers):
                 layer = _DenseLayerLTDN(in_channels + i * growth_rate, growth_rate, args)
                 # print(f"layer: \n {layer}")
@@ -124,7 +120,7 @@ class CondenseNet(nn.Module):
                                                         padding=1,
                                                         bias=False))
         
-        if LTDN:
+        if args.ltdn_model:
             resnet = ResNet(int(self.num_features/2), int(self.num_features/2),
                            kernel_size=[1,3,1])
             self.features.add_module('resnet', resnet)

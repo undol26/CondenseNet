@@ -76,7 +76,18 @@ parser.add_argument('--convert-from', default=None, type=str, metavar='PATH',
 parser.add_argument('--evaluate-from', default=None, type=str, metavar='PATH',
                     help='path to saved checkpoint (default: none)')
 
+# undol add
+parser.add_argument('--print_model', action='store_true', help='print model architecture')
+parser.add_argument('--ltdn_model', action='store_true', help='activate ltdn model')
+parser.add_argument('--measure_model', action='store_true', help='print measure_model (off when testing)')
+parser.add_argument('--summary_model', default="TORCH_SUMMAY", type=str, metavar='SM', help='print torch summary type')
+
 args = parser.parse_args()
+if args.summary_model == 'TORCH_SUMMARY':
+    from torchsummary import summary
+elif args.summary_model == 'TORCH_INFO':
+    from torchinfo import summary
+    
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 args.stages = list(map(int, args.stages.split('-')))
 args.growth = list(map(int, args.growth.split('-')))
@@ -101,29 +112,12 @@ import torch.utils.data
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 
-PRINT_SUMMARY = False
-TORCH_SUMMARY = True
-
-# PRINT_MODEL = True
-PRINT_MODEL = False
-
-# LTDN = True
-LTDN = False
-
-MEASURE_MODEL = True
-# MEASURE_MODEL = False
-
-if TORCH_SUMMARY:
-    from torchsummary import summary
-else:
-    from torchinfo import summary
-
 # torch.cuda.init()
 torch.manual_seed(args.manual_seed)
 torch.cuda.manual_seed_all(args.manual_seed)
 
 best_prec1 = 0
-
+isWriteArgsOnce = True
 
 def main():
     global args, best_prec1
@@ -131,21 +125,20 @@ def main():
     ## Calculate FLOPs & Param
     model = getattr(models, args.model)(args) # 결국 이게 model = condensenet(args) 이거네...
     
-    if PRINT_MODEL:
+    if args.print_model:
         print(model)
     if args.data in ['cifar10', 'cifar100']:
         IMAGE_SIZE = 32
     else:
         IMAGE_SIZE = 224
         
-    if MEASURE_MODEL:
+    if args.measure_model:
         n_flops, n_params = measure_model(model, IMAGE_SIZE, IMAGE_SIZE)
         print('FLOPs: %.2fM, Params: %.2fM' % (n_flops / 1e6, n_params / 1e6))
         args.filename = "%s_%s_%s.txt" % \
             (args.model, int(n_params), int(n_flops))
     del(model)
     print(args)
-
     ### Create model
     model = getattr(models, args.model)(args)
 
@@ -155,11 +148,11 @@ def main():
     else:
         model = torch.nn.DataParallel(model).cuda()
         
-    if PRINT_SUMMARY:
+    if args.print_model:
         print('****' * 10)
-        if TORCH_SUMMARY:
+        if args.summary_model == 'TORCH_SUMMARY':
             summary(model, input_size=(3, IMAGE_SIZE, IMAGE_SIZE))
-        else:
+        elif args.summay_model == 'TORCH_INFO':
             summary(model.cuda(), (args.batch_size, 3, IMAGE_SIZE, IMAGE_SIZE))
         print('****' * 10)
 
@@ -426,6 +419,7 @@ def load_checkpoint(args):
 
 
 def save_checkpoint(state, args, is_best, filename, result):
+    global isWriteArgsOnce
     print(args)
     result_filename = os.path.join(args.savedir, args.filename)
     model_dir = os.path.join(args.savedir, 'save_models')
@@ -440,10 +434,36 @@ def save_checkpoint(state, args, is_best, filename, result):
     torch.save(state, model_filename)
     with open(latest_filename, 'w') as fout:
         fout.write(model_filename)
+    if isWriteArgsOnce:
+        model_args_filename = os.path.join(model_dir, 'args.txt')
+        with open(model_args_filename, 'a') as fout:
+            fout.write('filename, ' + str(args.filename) + "\n")
+            fout.write('savedir, ' + str(args.savedir) + "\n")
+            fout.write('model, ' + str(args.model) + "\n")
+            fout.write('ltdn_model, ' + str(args.ltdn_model) + "\n")
+            fout.write('data, ' + str(args.data) + "\n")
+            fout.write('batch_size, ' + str(args.batch_size) + "\n")
+            fout.write('epochs, ' + str(args.epochs) + "\n")
+            fout.write('n_params, ' + str(args.n_params) + "\n")
+            fout.write('n_flops, ' + str(args.n_flops) + "\n")
+            fout.write('num_classes, ' + str(args.num_classes) + "\n")
+            fout.write('stages, ' + str(args.stages) + "\n")
+            fout.write('bottleneck, ' + str(args.bottleneck) + "\n")
+            fout.write('growth, ' + str(args.growth) + "\n")
+            fout.write('condense_factor, ' + str(args.condense_factor) + "\n")
+            fout.write('group_1x1, ' + str(args.group_1x1) + "\n")
+            fout.write('gpu, ' + str(args.gpu) + "\n")
+            fout.write('workers, ' + str(args.workers))
+            fout.write('momentum, ' + str(args.momentum) + "\n")
+            fout.write('weight_decay, ' + str(args.weight_decay) + "\n")
+        model_args_filename2 = os.path.join(model_dir, 'args2.txt')
+        with open(model_args_filename2, 'w') as fout:
+            fout.write(str(args))
+        isWriteArgsOnce = False
     if args.no_save_model:
         shutil.move(model_filename, best_filename)
     elif is_best:
-        shutil.copyfile(model_filename, best_filename)
+        shutil.copyfile(model_filename, best_filename) # src, dst
 
     print("=> saved checkpoint '{}'".format(model_filename))
     return
