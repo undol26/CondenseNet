@@ -81,6 +81,7 @@ parser.add_argument('--print_model', action='store_true', help='print model arch
 parser.add_argument('--ltdn_model', action='store_true', help='activate ltdn model')
 parser.add_argument('--measure_model', action='store_true', help='print measure_model (off when testing)')
 parser.add_argument('--summary_model', default="TORCH_SUMMAY", type=str, metavar='SM', help='print torch summary type')
+parser.add_argument('--paths', type=str, metavar='P', help='number of path per stage')
 
 args = parser.parse_args()
 if args.summary_model == 'TORCH_SUMMARY':
@@ -91,6 +92,7 @@ elif args.summary_model == 'TORCH_INFO':
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 args.stages = list(map(int, args.stages.split('-')))
 args.growth = list(map(int, args.growth.split('-')))
+args.paths =  list(map(int, args.paths.split('-')))
 if args.condense_factor is None:
     args.condense_factor = args.group_1x1
 

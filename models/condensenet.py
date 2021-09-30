@@ -32,60 +32,60 @@ class _DenseLayer(nn.Module):
         return torch.cat([x_, x], 1)
     
 class _DenseLayerLTDN(nn.Module):
-    def __init__(self, in_channels, growth_rate, args):
+    def __init__(self, in_channels, growth_rate, path, args):
         super(_DenseLayerLTDN, self).__init__()
         
         self.group_1x1 = args.group_1x1
         self.group_3x3 = args.group_3x3
-        # upper case
-        ### 1x1 conv i --> b*k
-        self.conv_1 = LearnedGroupConv(int(in_channels/2), int(args.bottleneck * growth_rate/2),
-                                       kernel_size=1, groups=self.group_1x1,
-                                       condense_factor=args.condense_factor,
-                                       dropout_rate=args.dropout_rate)
-        ### 3x3 conv b*k --> k
-        self.conv_2 = Conv(int(args.bottleneck*growth_rate/2), int(growth_rate/2),
-                           kernel_size=3, padding=1, groups=self.group_3x3)
+        self.path = path
         
-        # lower case
-        ### 1x1 conv i --> b*k
-        self.conv_3 = LearnedGroupConv(int(in_channels/2), int(args.bottleneck * growth_rate/2),
-                                       kernel_size=1, groups=self.group_1x1,
-                                       condense_factor=args.condense_factor,
-                                       dropout_rate=args.dropout_rate)
-        ### 3x3 conv b*k --> k
-        self.conv_4 = Conv(int(args.bottleneck * growth_rate/2), int(growth_rate/2),
+        for i in range(path):
+            ### 1x1 conv i --> b*k
+            layer1 = LearnedGroupConv(int(in_channels/path), int(args.bottleneck * growth_rate/path),
+                                kernel_size=1, groups=self.group_1x1,
+                                condense_factor=args.condense_factor,
+                                dropout_rate=args.dropout_rate)
+            self.add_module('path_%d%d' %((i + 1),  1), layer1)
+            ### 3x3 conv b*k --> k
+            layer2 = Conv(int(args.bottleneck*growth_rate/path), int(growth_rate/path),
                            kernel_size=3, padding=1, groups=self.group_3x3)
-
+            self.add_module('path_%d%d' % ((i + 1), 2), layer2)
+        
     def forward(self, x):
         input_channels = int(x.shape[1])
-        half_input_channels = int(input_channels/2)
-        # output_channels = int(x.shape[1])
-        # half_output_channels = int(output_channels/2)
+        path = self.path
+        num_input_part_channels = int(input_channels/path)
+            
+        input_part = {}
+        output_part = {}
+        returnList = []
+        for i in range(path):
+            temp_input_part = x[:,i*num_input_part_channels:(i+1)*num_input_part_channels,:,:]
+            input_part['input_part{0}'.format(i+1)] = temp_input_part
         
-        upper_input = x[:,0:half_input_channels,:,:] #1, 8, 32, 32
-        upper = self.conv_1(upper_input) # 1, 16, 32, 32
-        upper = self.conv_2(upper) # 1, 4, 32, 32
-        
-        lower_input = x[:,half_input_channels:input_channels,:,:] #1,8,32,32
-        lower = self.conv_3(lower_input) #1, 16, 32, 32
-        lower = self.conv_4(lower) #1, 4, 32, 32
-        
-        return torch.cat([upper_input, lower, lower_input, upper], 1)
+            output_part['output_part{0}'.format(i+1)] = eval(f'self.path_{i+1}{1}')(input_part['input_part{0}'.format(i+1)])
+            output_part['output_part{0}'.format(i+1)] = eval(f'self.path_{i+1}{2}')(output_part['output_part{0}'.format(i+1)])
+            
+        for i in range(path):
+            if i%2==0:
+                returnList.append(input_part['input_part{0}'.format(i+1)])
+                returnList.append(output_part['output_part{0}'.format(i+2)])
+                returnList.append(input_part['input_part{0}'.format(i+2)])
+                returnList.append(output_part['output_part{0}'.format(i+1)])
+            
+        return torch.cat(returnList, 1)
     
 class _DenseBlock(nn.Sequential):
-    def __init__(self, num_layers, in_channels, growth_rate, args):
+    def __init__(self, num_layers, in_channels, growth_rate, path, args):
         super(_DenseBlock, self).__init__()
         if args.ltdn_model:
             for i in range(num_layers):
-                layer = _DenseLayerLTDN(in_channels + i * growth_rate, growth_rate, args)
-                # print(f"layer: \n {layer}")
+                layer = _DenseLayerLTDN(in_channels + i * growth_rate, growth_rate, path, args)
                 self.add_module('denselayer_%d' % (i + 1), layer)
             
         else:
             for i in range(num_layers):
                 layer = _DenseLayer(in_channels + i * growth_rate, growth_rate, args)
-                # print(f"layer: \n {layer}")
                 self.add_module('denselayer_%d' % (i + 1), layer)
             
 class _Transition(nn.Module):
@@ -105,6 +105,7 @@ class CondenseNet(nn.Module):
 
         self.stages = args.stages
         self.growth = args.growth
+        self.paths = args.paths
         assert len(self.stages) == len(self.growth)
         self.args = args
         self.progress = 0.0
@@ -129,6 +130,8 @@ class CondenseNet(nn.Module):
         if args.ltdn_model:
             resnet = ResNet(int(self.num_features/2), int(self.num_features/2),
                            kernel_size=[1,3,1])
+            # resnet = ResNet(3, int(self.num_features/2),
+            #                kernel_size=[1,3,1])
             self.features.add_module('resnet', resnet)
             
         for i in range(len(self.stages)):
@@ -148,28 +151,6 @@ class CondenseNet(nn.Module):
                 m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
                 m.bias.data.zero_()
-            
-            # print("x00 before")
-            # print(x00.weight[0,1,2,2])
-            # print(x00.weight[3,1,2,2])
-            # print(x00.weight[3,2,1,2])
-            
-            # print("init_layer")
-            # print(init_layer.weight[0,1,2,2])
-            # print(init_layer.weight[3,1,2,2])
-            # print(init_layer.weight[3,2,1,2])
-            
-            # x00.weight.data.copy_(init_layer.weight[0:int(self.num_features/2),:,:,:])
-            
-            # print("x00 after")
-            # print(x00.weight[0,1,2,2])
-            # print(x00.weight[3,1,2,2])
-            # print(x00.weight[3,2,1,2])
-            
-            # x10.weight.data.copy_(init_layer.weight[int(self.num_features/2):self.num_features,:,:,:])
-            
-            # x00을 resnet에 통과시키기
-            
         return
 
     def add_block(self, i):
@@ -179,6 +160,7 @@ class CondenseNet(nn.Module):
             num_layers=self.stages[i],
             in_channels=self.num_features,
             growth_rate=self.growth[i],
+            path=self.paths[i],
             args=self.args,
         )
         self.features.add_module('denseblock_%d' % (i + 1), block)
