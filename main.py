@@ -123,24 +123,27 @@ isWriteArgsOnce = True
 
 def main():
     global args, best_prec1
-
-    ## Calculate FLOPs & Param
-    model = getattr(models, args.model)(args) # 결국 이게 model = condensenet(args) 이거네...
     
-    if args.print_model:
-        print(model)
     if args.data in ['cifar10', 'cifar100']:
         IMAGE_SIZE = 32
     else:
         IMAGE_SIZE = 224
         
     if args.measure_model:
+        ## Calculate FLOPs & Param
+        model = getattr(models, args.model)(args) # 결국 이게 model = condensenet(args) 이거네...
         n_flops, n_params = measure_model(model, IMAGE_SIZE, IMAGE_SIZE)
         print('FLOPs: %.2fM, Params: %.2fM' % (n_flops / 1e6, n_params / 1e6))
         args.filename = "%s_%s_%s.txt" % \
             (args.model, int(n_params), int(n_flops))
-    del(model)
-    print(args)
+        args.n_flops = n_flops
+        args.n_params = n_params
+        
+        if args.print_model:
+            print(model)
+        del(model)
+        print(args)
+    
     ### Create model
     model = getattr(models, args.model)(args)
 

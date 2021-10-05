@@ -117,8 +117,7 @@ class CondenseNet(nn.Module):
             self.pool_size = 7
 
         self.features = nn.Sequential() # total
-        
-         ### Initial nChannels should be 3
+        ### Initial nChannels should be 3
         self.num_features = 2 * self.growth[0] # (2*8)
         ### Dense-block 1 (224x224)
         self.features.add_module('init_conv', nn.Conv2d(3, self.num_features,
@@ -130,8 +129,6 @@ class CondenseNet(nn.Module):
         if args.ltdn_model:
             resnet = ResNet(int(self.num_features/2), int(self.num_features/2),
                            kernel_size=[1,3,1])
-            # resnet = ResNet(3, int(self.num_features/2),
-            #                kernel_size=[1,3,1])
             self.features.add_module('resnet', resnet)
             
         for i in range(len(self.stages)):
@@ -181,10 +178,6 @@ class CondenseNet(nn.Module):
         if progress:
             LearnedGroupConv.global_progress = progress
         features = self.features(x)
-        # fc 쓰기전에 넣을 때 공통적으로 view 를 쓰네 마치
-        # view는 언제 쓰는 건가?
-        # x = x.view(x.size(0), -1)
-        # x = F.relu(self.fc1(x1))
         out = features.view(features.size(0), -1)
         out = self.classifier(out)
         return out
