@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
+import random
 
 
 class LearnedGroupConv(nn.Module):
@@ -245,13 +246,127 @@ class CondenseConv(nn.Module):
 
 
 class Conv(nn.Sequential):
-    def __init__(self, in_channels, out_channels, kernel_size, 
-                 stride=1, padding=0, groups=1):
+    def __init__(self, index, in_channels, out_channels, kernel_size,
+                 stride=1, padding=0, groups=1, rsdc_size=3):
         super(Conv, self).__init__()
         self.add_module('norm', nn.BatchNorm2d(in_channels))
         self.add_module('relu', nn.ReLU(inplace=True))
-        self.add_module('conv', nn.Conv2d(in_channels, out_channels,
-                                          kernel_size=kernel_size,
+        if rsdc_size == 3 or index==0:
+            self.add_module('conv', nn.Conv2d(in_channels, out_channels,
+                                            kernel_size=kernel_size,
+                                            stride=stride,
+                                            padding=padding, bias=False,
+                                            groups=groups))
+        elif rsdc_size in [5, 7] and index>=1:
+            if rsdc_size == 5:
+                rsdc_padding = 2
+            else:
+                rsdc_padding = 3
+            rsdc_stride = 1
+
+            rsdc_input_layer = nn.Conv2d(in_channels, out_channels, kernel_size=rsdc_size,
+                                    stride=rsdc_stride, padding=rsdc_padding, bias=False, groups=groups)            
+            # rsdc_input_layer = nn.Conv2d(in_channels, out_channels, kernel_size=rsdc_size,
+            #                         stride=rsdc_stride, padding=rsdc_padding, bias=False)
+            # rsdc_input_layer = nn.Conv2d(in_channels, out_channels, kernel_size=rsdc_size,
+            #             stride=1, padding=1, bias=False)
+            
+            rsdc_output_layer = rsdc(rsdc_input_layer, num_input_feature_map=in_channels, num_output_feature_map=out_channels,
+                 original_kernel_size=rsdc_size, target_kernel_size=3, target_stride=stride, target_padding=padding, groups=groups)
+            self.add_module('conv', rsdc_output_layer)
+
+def rsdc(input_layer, num_input_feature_map, num_output_feature_map, original_kernel_size, target_kernel_size, target_stride, target_padding, groups):
+    
+    # input_layer: 5x5 layer
+    # num_input_feature_map: 5x5 layer #input 
+    # num_output_feature_map: 5x5 layer #output
+    # 1.2 random index 뽑기
+    index_original = torch.zeros(num_output_feature_map, target_kernel_size**2)
+    index_original_sorted = torch.zeros(num_output_feature_map, target_kernel_size**2)
+    index_original_value = torch.zeros(num_output_feature_map, target_kernel_size**2)
+    
+    test_index = 5
+
+    for j in range(num_output_feature_map):
+        num = random.randrange(0, original_kernel_size ** 2) # original_kernel_size = 5
+        for i in range(target_kernel_size**2): # target_kernel_size = 3
+            while num in index_original[j]: # 중복될 경우
+                num = random.randrange(0, original_kernel_size ** 2)
+            index_original[j][i] = num
+        index_original_sorted[j], index_original_value[j] = index_original[j].sort()
+        # if j == test_index:
+        #     print('index_original: ' + str(index_original[j]))
+        #     print('index_original_sorted: ' + str(index_original_sorted[j]))
+        
+    # 1.3. input_layer를 reshape함.
+    # input_layer_reshape = input_layer.weight.reshape(num_output_feature_map, num_input_feature_map, -1) # output channel 개수를 먼저 써야 하네.
+    input_layer_reshape = input_layer.weight.reshape(num_output_feature_map, int(num_input_feature_map/groups), -1) # output channel 개수를 먼저 써야 하네.
+
+    # 1.4. 내가 사용할 output_layer 만들고, 여기에 위의 index값을 넣기.
+    
+    output_layer = nn.Conv2d(num_input_feature_map, num_output_feature_map, kernel_size = target_kernel_size,
+                                   stride = target_stride, padding = target_padding, groups=groups)
+    # print('\noutput_layer.weight before: \n{}'.format(output_layer.weight[test_index,0,:,:]))
+
+    output_layer_reshape = output_layer.weight.reshape(num_output_feature_map, int(num_input_feature_map/groups), -1)
+    for j in range(num_output_feature_map):
+        for i in range(len(index_original_sorted[j])):
+            index = int(index_original_sorted[j][i])
+            output_layer_reshape[j][0][i].data.copy_(input_layer_reshape[j][0][index].data)
+            # https://seducinghyeok.tistory.com/10 how to copy tensor
+            
+        # if j == test_index:
+        #     print('output_layer_reshape after: ' + str(output_layer_reshape[j, 0, :]))
+        
+    output_layer.weight = nn.Parameter(output_layer_reshape.reshape(num_output_feature_map, int(num_input_feature_map/groups), target_kernel_size, target_kernel_size))
+    # filter_train1.copy_(output_layer.weight)
+    # print('\output_layer.weight after: \n{}'.format(output_layer.weight[test_index,0,:,:]))
+    return output_layer
+        
+class ResNet(nn.Module): #// module로 바꾸고 아래 add_module을 죄다 손봐야 됨.
+    def __init__(self, in_channels, out_channels, kernel_size, 
+                 stride=1, padding=0):
+        super(ResNet, self).__init__()
+        
+        # 1st
+        self.conv1 = nn.Conv2d(in_channels, out_channels,
+                                          kernel_size=kernel_size[0],
                                           stride=stride,
-                                          padding=padding, bias=False,
-                                          groups=groups))
+                                          padding=padding, bias=False)
+        self.norm1 = nn.BatchNorm2d(out_channels)
+        self.relu1 = nn.ReLU(inplace=True)
+
+        # 2nd
+        self.conv2 = nn.Conv2d(out_channels, out_channels,
+                                          kernel_size=kernel_size[1],
+                                          stride=stride,
+                                          padding=1, bias=False)
+        self.norm2 = nn.BatchNorm2d(out_channels)
+        self.relu2 = nn.ReLU(inplace=True)
+        
+        # 3rd
+        self.conv3 = nn.Conv2d(out_channels, out_channels,
+                                          kernel_size=kernel_size[2],
+                                          stride=stride,
+                                          padding=padding, bias=False)
+        self.norm3 = nn.BatchNorm2d(out_channels)
+        self.relu3 = nn.ReLU(inplace=True)
+        
+    def forward(self, x):
+        # 여기서 len(x)/2 이런식으로 조절, view 이런걸로 조절.해서 반만 들어가서 반만 concatenate할 수 있도록.
+        top_half = int(x.shape[1]/2)
+        output_channels = int(x.shape[1])
+        upper_input = x[:,0:top_half,:,:] #[1, 8, 32, 32]
+        lower_input = x[:,top_half:output_channels,:,:]
+        
+        upper_input = self.conv1(upper_input) 
+        upper_input = self.norm1(upper_input) 
+        upper_input = self.relu1(upper_input) 
+        upper_input = self.conv2(upper_input) 
+        upper_input = self.norm2(upper_input) 
+        upper_input = self.relu2(upper_input) 
+        upper_input = self.conv3(upper_input) 
+        upper_input = self.norm3(upper_input)
+        upper_input = self.relu3(upper_input) 
+        
+        return torch.cat([upper_input, lower_input], 1)
